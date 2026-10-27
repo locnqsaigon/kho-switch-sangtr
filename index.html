@@ -1,0 +1,1187 @@
+<!DOCTYPE html>
+<html lang="vi" class="h-full bg-slate-50 text-slate-800">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QUẢN LÝ KHO SHOP SANG TR</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- SheetJS (XLSX Reader / Writer) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <style>
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 7px;
+      height: 7px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col font-sans antialiased text-slate-800 bg-slate-50">
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <!-- Top Navigation Header -->
+  <header class="bg-white border-b border-slate-200/80 sticky top-0 z-30 shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+        <!-- Logo & Title -->
+        <div class="flex items-center space-x-3">
+          <div class="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-600 to-red-500 text-white shadow-md shadow-rose-500/20">
+            <i data-lucide="gamepad-2" class="w-6 h-6"></i>
+          </div>
+          <div>
+            <h1 class="font-bold text-lg text-slate-900 tracking-tight flex items-center gap-2">
+              QUẢN LÝ KHO SHOP SANG TR
+              <span id="cloud-status-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">Đang kết nối Cloud...</span>
+            </h1>
+            <p class="text-xs text-slate-500">Hệ thống theo dõi kho & kiểm soát kỹ thuật máy Switch (Đồng bộ thời gian thực)</p>
+          </div>
+        </div>
+
+        <!-- Header Actions -->
+        <div class="flex items-center space-x-3">
+          <input type="file" id="excel-file-input" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleFileUpload(event)">
+          
+          <button type="button" onclick="document.getElementById('excel-file-input').click()" class="inline-flex items-center px-3 py-2 text-sm font-medium rounded-lg text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition shadow-sm">
+            <i data-lucide="upload" class="w-4 h-4 mr-2"></i> Nhập file Excel/CSV
+          </button>
+          <button type="button" onclick="exportToExcel()" class="inline-flex items-center px-3 py-2 text-sm font-medium rounded-lg text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 transition shadow-sm">
+            <i data-lucide="download" class="w-4 h-4 mr-2"></i> Xuất Excel/CSV
+          </button>
+          <button type="button" onclick="promptResetData()" title="Khôi phục dữ liệu mẫu" class="inline-flex items-center px-3 py-2 text-sm font-medium rounded-lg text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition shadow-sm">
+            <i data-lucide="rotate-ccw" class="w-4 h-4 mr-1"></i> Đặt lại
+          </button>
+          <button type="button" onclick="openModal('add')" class="inline-flex items-center px-4 py-2 text-sm font-semibold rounded-lg text-white bg-gradient-to-r from-red-600 to-rose-500 hover:from-red-500 hover:to-rose-400 shadow-sm transition">
+            <i data-lucide="plus" class="w-4 h-4 mr-1"></i> Thêm máy mới
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <div class="bg-white border-b border-slate-200/80 shadow-2xs">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+        <button id="tab-dashboard" onclick="switchTab('dashboard')" class="py-3 px-1 inline-flex items-center border-b-2 border-rose-600 text-rose-600 font-semibold text-sm gap-2 transition">
+          <i data-lucide="layout-dashboard" class="w-4 h-4"></i> Tổng Quan Dashboard
+        </button>
+        <button id="tab-devices" onclick="switchTab('devices')" class="py-3 px-1 inline-flex items-center border-b-2 border-transparent text-slate-500 hover:text-slate-800 font-medium text-sm gap-2 transition">
+          <i data-lucide="list" class="w-4 h-4"></i> Danh Sách Kho & KT 
+          <span id="total-count-badge" class="ml-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">0</span>
+        </button>
+      </nav>
+    </div>
+  </div>
+
+  <!-- Main Content Area -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+    <!-- VIEW 1: DASHBOARD -->
+    <div id="view-dashboard" class="space-y-6">
+      
+      <!-- KPI Stats Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
+        <!-- Card Total -->
+        <div class="bg-white p-5 rounded-xl border border-slate-200/80 shadow-sm">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium text-slate-500">TỔNG SỐ MÁY</span>
+            <div class="p-2 rounded-lg bg-slate-100 text-slate-600"><i data-lucide="boxes" class="w-5 h-5"></i></div>
+          </div>
+          <div class="mt-2 flex items-baseline justify-between">
+            <span id="kpi-total" class="text-2xl font-bold text-slate-900">0</span>
+            <span class="text-xs text-slate-400">Thiết bị</span>
+          </div>
+        </div>
+
+        <!-- Card In Stock -->
+        <div class="bg-white p-5 rounded-xl border border-slate-200/80 shadow-sm">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium text-emerald-600">TRONG KHO</span>
+            <div class="p-2 rounded-lg bg-emerald-50 text-emerald-600"><i data-lucide="check-circle" class="w-5 h-5"></i></div>
+          </div>
+          <div class="mt-2 flex items-baseline justify-between">
+            <span id="kpi-in-stock" class="text-2xl font-bold text-emerald-600">0</span>
+            <span class="text-xs text-emerald-500 font-medium">Sẵn sàng bán</span>
+          </div>
+        </div>
+
+        <!-- Card In Tech -->
+        <div class="bg-white p-5 rounded-xl border border-slate-200/80 shadow-sm">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium text-amber-600">ĐANG Ở KỸ THUẬT</span>
+            <div class="p-2 rounded-lg bg-amber-50 text-amber-600"><i data-lucide="wrench" class="w-5 h-5"></i></div>
+          </div>
+          <div class="mt-2 flex items-baseline justify-between">
+            <span id="kpi-in-tech" class="text-2xl font-bold text-amber-600">0</span>
+            <span class="text-xs text-amber-500 font-medium">Đang sửa/Mod</span>
+          </div>
+        </div>
+
+        <!-- Card Received Back -->
+        <div class="bg-white p-5 rounded-xl border border-slate-200/80 shadow-sm">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium text-cyan-600">ĐÃ NHẬP KHO</span>
+            <div class="p-2 rounded-lg bg-cyan-50 text-cyan-600"><i data-lucide="package-check" class="w-5 h-5"></i></div>
+          </div>
+          <div class="mt-2 flex items-baseline justify-between">
+            <span id="kpi-received" class="text-2xl font-bold text-cyan-600">0</span>
+            <span class="text-xs text-cyan-500 font-medium">Đã xong từ KT</span>
+          </div>
+        </div>
+
+        <!-- Card Alert Over 7 Days -->
+        <div class="bg-white p-5 rounded-xl border border-slate-200/80 shadow-sm">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium text-rose-600">KT GIỮ > 7 NGÀY</span>
+            <div class="p-2 rounded-lg bg-rose-50 text-rose-600"><i data-lucide="alert-triangle" class="w-5 h-5"></i></div>
+          </div>
+          <div class="mt-2 flex items-baseline justify-between">
+            <span id="kpi-over-7days" class="text-2xl font-bold text-rose-600">0</span>
+            <span class="text-xs text-rose-500 font-medium">Cần đôn đốc</span>
+          </div>
+        </div>
+
+        <!-- Total Value -->
+        <div class="bg-white p-5 rounded-xl border border-slate-200/80 shadow-sm">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium text-slate-500">TỔNG GIÁ TRỊ KHO</span>
+            <div class="p-2 rounded-lg bg-slate-100 text-slate-600"><i data-lucide="badge-dollar-sign" class="w-5 h-5"></i></div>
+          </div>
+          <div class="mt-2 flex items-baseline justify-between">
+            <span id="kpi-total-value" class="text-lg font-bold text-slate-900">0 ₫</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Charts Row -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Chart 1: Status Doughnut -->
+        <div class="bg-white p-5 rounded-xl border border-slate-200/80 shadow-sm flex flex-col">
+          <h3 class="font-bold text-slate-800 text-base mb-4 flex items-center gap-2">
+            <i data-lucide="pie-chart" class="w-4 h-4 text-rose-600"></i>
+            Phân bổ trạng thái thiết bị
+          </h3>
+          <div class="flex-1 relative min-h-[240px]">
+            <canvas id="statusChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Chart 2: Model Distribution Bar -->
+        <div class="bg-white p-5 rounded-xl border border-slate-200/80 shadow-sm flex flex-col">
+          <h3 class="font-bold text-slate-800 text-base mb-4 flex items-center gap-2">
+            <i data-lucide="bar-chart-3" class="w-4 h-4 text-rose-600"></i>
+            Số lượng máy theo Dòng (Model)
+          </h3>
+          <div class="flex-1 relative min-h-[240px]">
+            <canvas id="modelChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Branch Table Summary -->
+      <div class="bg-white p-5 rounded-xl border border-slate-200/80 shadow-sm">
+        <h3 class="font-bold text-slate-800 text-base mb-4 flex items-center gap-2">
+          <i data-lucide="building-2" class="w-4 h-4 text-rose-600"></i>
+          Thống kê thiết bị theo Chi nhánh
+        </h3>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm text-left text-slate-600">
+            <thead class="text-xs uppercase bg-slate-50 text-slate-500 border-b border-slate-200">
+              <tr>
+                <th class="py-3 px-4 font-semibold">Chi nhánh</th>
+                <th class="py-3 px-4 font-semibold">Tổng số máy</th>
+                <th class="py-3 px-4 font-semibold text-emerald-600">Trong kho</th>
+                <th class="py-3 px-4 font-semibold text-amber-600">Đang kỹ thuật</th>
+                <th class="py-3 px-4 font-semibold text-cyan-600">Đã nhập kho</th>
+                <th class="py-3 px-4 font-semibold">Tổng giá trị ước tính</th>
+              </tr>
+            </thead>
+            <tbody id="branch-stats-table" class="divide-y divide-slate-100">
+              <!-- Render by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- VIEW 2: DEVICES TABLE & SEARCH -->
+    <div id="view-devices" class="hidden space-y-4">
+      
+      <!-- Filters Bar -->
+      <div class="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm flex flex-col lg:flex-row gap-3 items-center justify-between">
+        
+        <!-- Search Input -->
+        <div class="relative w-full lg:w-80">
+          <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
+          <input type="text" id="filter-search" oninput="applyFilters()" placeholder="Tìm theo Serial, lỗi, ghi chú..." class="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition">
+        </div>
+
+        <!-- Dropdown Filters -->
+        <div class="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+          <!-- Status Filter -->
+          <select id="filter-status" onchange="applyFilters()" class="bg-slate-50 border border-slate-200 rounded-lg text-sm px-3 py-2 text-slate-700 focus:outline-none focus:ring-2 focus:ring-rose-500/20">
+            <option value="">Tất cả trạng thái</option>
+            <option value="Trong kho">Trong kho</option>
+            <option value="Đang ở kỹ thuật">Đang ở kỹ thuật</option>
+            <option value="Đã nhập kho">Đã nhập kho</option>
+          </select>
+
+          <!-- Branch Filter -->
+          <select id="filter-branch" onchange="applyFilters()" class="bg-slate-50 border border-slate-200 rounded-lg text-sm px-3 py-2 text-slate-700 focus:outline-none focus:ring-2 focus:ring-rose-500/20">
+            <option value="">Tất cả chi nhánh</option>
+            <option value="Trụ sở Bình Tân">Trụ sở Bình Tân</option>
+            <option value="Chi nhánh Quận 5">Chi nhánh Quận 5</option>
+            <option value="KT - Bình Thạnh">KT - Bình Thạnh</option>
+          </select>
+
+          <!-- Model Filter -->
+          <select id="filter-model" onchange="applyFilters()" class="bg-slate-50 border border-slate-200 rounded-lg text-sm px-3 py-2 text-slate-700 focus:outline-none focus:ring-2 focus:ring-rose-500/20">
+            <option value="">Tất cả dòng máy</option>
+            <option value="Switch V1 Mod Chip">Switch V1 Mod Chip</option>
+            <option value="Switch V1 Seri Xanh">Switch V1 Seri Xanh</option>
+            <option value="Switch V1">Switch V1</option>
+            <option value="Switch V2">Switch V2</option>
+            <option value="Switch Lite">Switch Lite</option>
+            <option value="Switch OLED">Switch OLED</option>
+            <option value="Switch 2">Switch 2</option>
+          </select>
+        </div>
+
+      </div>
+
+      <!-- Main Devices Table -->
+      <div class="bg-white rounded-xl border border-slate-200/80 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm text-left text-slate-600">
+            <thead class="text-xs uppercase bg-slate-50 text-slate-500 border-b border-slate-200">
+              <tr>
+                <th class="py-3.5 px-3.5 font-semibold">Số Serial</th>
+                <th class="py-3.5 px-3.5 font-semibold">Model / Thẻ</th>
+                <th class="py-3.5 px-3.5 font-semibold">Giá máy (VNĐ)</th>
+                <th class="py-3.5 px-3.5 font-semibold whitespace-nowrap min-w-[150px]">Chi nhánh</th>
+                <th class="py-3.5 px-3.5 font-semibold whitespace-nowrap min-w-[160px]">Trạng thái</th>
+                <th class="py-3.5 px-3.5 font-semibold">Lỗi ban đầu</th>
+                <th class="py-3.5 px-3.5 font-semibold">Thời gian KT</th>
+                <th class="py-3.5 px-3.5 font-semibold">KT Xử Lý / Ghi Chú</th>
+                <th class="py-3.5 px-3.5 font-semibold text-right">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody id="device-table-body">
+              <!-- Dynamic Rows -->
+            </tbody>
+          </table>
+        </div>
+        
+        <!-- Empty State -->
+        <div id="empty-state" class="hidden py-12 text-center">
+          <i data-lucide="package-open" class="w-12 h-12 text-slate-300 mx-auto mb-3"></i>
+          <p class="text-slate-500 font-medium text-sm">Không tìm thấy máy Switch nào phù hợp</p>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- MODAL: ADD / EDIT DEVICE -->
+  <div id="device-modal" class="hidden fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-2xl overflow-hidden my-8">
+      
+      <!-- Modal Header -->
+      <div class="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+        <h3 id="modal-title" class="font-bold text-slate-800 text-base flex items-center gap-2">
+          <i data-lucide="plus-circle" class="w-5 h-5 text-rose-600"></i> Thêm máy Switch mới
+        </h3>
+        <button type="button" onclick="closeModal()" class="text-slate-400 hover:text-slate-600 transition p-1 rounded-lg">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Modal Form -->
+      <form id="device-form" onsubmit="saveDevice(event)" class="p-6 space-y-4">
+        <input type="hidden" id="form-id">
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <!-- Serial -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Số Serial máy <span class="text-rose-500">*</span></label>
+            <input type="text" id="form-serial" required placeholder="Ví dụ: XKW1001" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500">
+          </div>
+
+          <!-- Model -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Dòng máy (Model) <span class="text-rose-500">*</span></label>
+            <select id="form-model" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20">
+              <option value="Switch V1 Mod Chip">Switch V1 Mod Chip</option>
+              <option value="Switch V1 Seri Xanh">Switch V1 Seri Xanh</option>
+              <option value="Switch V1">Switch V1</option>
+              <option value="Switch V2" selected>Switch V2</option>
+              <option value="Switch Lite">Switch Lite</option>
+              <option value="Switch OLED">Switch OLED</option>
+              <option value="Switch 2">Switch 2</option>
+            </select>
+          </div>
+
+          <!-- Capacity -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Dung lượng thẻ SD</label>
+            <select id="form-capacity" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20">
+              <option value="Không thẻ">Không thẻ</option>
+              <option value="64GB" selected>64GB</option>
+              <option value="128GB">128GB</option>
+              <option value="256GB">256GB</option>
+              <option value="512GB">512GB</option>
+              <option value="1TB">1TB</option>
+            </select>
+          </div>
+
+          <!-- Price -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Giá máy (VNĐ)</label>
+            <input type="number" id="form-price" placeholder="4500000" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20">
+          </div>
+
+          <!-- Branch -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Chi nhánh quản lý</label>
+            <select id="form-branch" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20">
+              <option value="Trụ sở Bình Tân">Trụ sở Bình Tân</option>
+              <option value="Chi nhánh Quận 5">Chi nhánh Quận 5</option>
+              <option value="KT - Bình Thạnh">KT - Bình Thạnh</option>
+            </select>
+          </div>
+
+          <!-- Status -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Trạng thái hiện tại</label>
+            <select id="form-status" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20">
+              <option value="Trong kho">Trong kho</option>
+              <option value="Đang ở kỹ thuật">Đang ở kỹ thuật</option>
+              <option value="Đã nhập kho">Đã nhập kho</option>
+            </select>
+          </div>
+
+          <!-- Date Received -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Ngày nhận máy</label>
+            <input type="date" id="form-date-received" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20">
+          </div>
+
+          <!-- Date Tech Send -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Ngày gửi Kỹ Thuật</label>
+            <input type="date" id="form-date-tech-send" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20">
+          </div>
+
+          <!-- Date Tech Return -->
+          <div class="sm:col-span-2">
+            <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Ngày nhận lại từ Kỹ Thuật</label>
+            <input type="date" id="form-date-tech-return" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20">
+          </div>
+        </div>
+
+        <!-- Issue -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Tình trạng / Lỗi ban đầu</label>
+          <input type="text" id="form-issue" placeholder="Ví dụ: Joystick bị drift, Pin chai..." class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20">
+        </div>
+
+        <!-- Tech Action -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Kỹ thuật đã xử lý gì</label>
+          <input type="text" id="form-tech-action" placeholder="Ví dụ: Thay Joystick trái, Vệ sinh quạt..." class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20">
+        </div>
+
+        <!-- Note -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Ghi chú thêm</label>
+          <textarea id="form-note" rows="2" placeholder="Nhập ghi chú chi tiết nếu có..." class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20"></textarea>
+        </div>
+
+        <!-- Form Actions -->
+        <div class="pt-4 border-t border-slate-200 flex items-center justify-end space-x-3">
+          <button type="button" onclick="closeModal()" class="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-lg transition">Hủy</button>
+          <button type="submit" class="px-5 py-2 text-sm font-semibold text-white bg-rose-600 hover:bg-rose-500 rounded-lg shadow-sm transition">Lưu thông tin</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: QUICK CHANGE STATUS -->
+  <div id="status-modal" class="hidden fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl border border-slate-200 shadow-2xl w-full max-w-md p-6">
+      <h3 class="font-bold text-slate-800 text-base mb-1">Đổi trạng thái thiết bị nhanh</h3>
+      <p id="status-modal-serial" class="text-xs text-rose-600 font-semibold mb-4"></p>
+
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Trạng thái mới</label>
+          <select id="quick-status" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20">
+            <option value="Trong kho">Trong kho</option>
+            <option value="Đang ở kỹ thuật">Đang ở kỹ thuật</option>
+            <option value="Đã nhập kho">Đã nhập kho</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Chi nhánh</label>
+          <select id="quick-branch" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20">
+            <option value="Trụ sở Bình Tân">Trụ sở Bình Tân</option>
+            <option value="Chi nhánh Quận 5">Chi nhánh Quận 5</option>
+            <option value="KT - Bình Thạnh">KT - Bình Thạnh</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Ghi chú KT / Thao tác</label>
+          <input type="text" id="quick-tech" placeholder="Ghi chú thao tác..." class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20">
+        </div>
+      </div>
+
+      <div class="mt-6 flex items-center justify-end gap-3">
+        <button type="button" onclick="closeStatusModal()" class="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 bg-slate-100 rounded-lg">Hủy</button>
+        <button type="button" onclick="saveQuickStatus()" class="px-4 py-2 text-sm font-semibold text-white bg-rose-600 hover:bg-rose-500 rounded-lg">Cập nhật</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: CONFIRMATION DIALOG (Fix Google Sites iframe confirm() error) -->
+  <div id="confirm-modal" class="hidden fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl border border-slate-200 shadow-2xl w-full max-w-sm p-6 text-center">
+      <div class="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-3">
+        <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+      </div>
+      <h3 id="confirm-modal-title" class="font-bold text-slate-900 text-base mb-1">Xác nhận thao tác</h3>
+      <p id="confirm-modal-msg" class="text-xs text-slate-500 mb-5">Bạn có chắc chắn muốn thực hiện thao tác này?</p>
+      <div class="flex justify-center gap-3">
+        <button type="button" onclick="closeConfirmModal(false)" class="w-1/2 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition">Hủy</button>
+        <button type="button" id="confirm-modal-btn" onclick="closeConfirmModal(true)" class="w-1/2 py-2 text-sm font-semibold text-white bg-rose-600 hover:bg-rose-500 rounded-lg transition">Đồng ý</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- FIREBASE CLOUD DATABASE MODULE INTEGRATION & LOCAL STORAGE HYBRID -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // Key để lưu LocalStorage khi chạy trong Google Sites iframe
+    const LOCAL_STORAGE_KEY = 'SANGTR_SWITCH_INVENTORY_DATA_V1';
+
+    // App ID & Firebase Config
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'sangtr-switch-app';
+    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+      apiKey: "AIzaSyDummyKeyForGoogleSitesCloudV1",
+      authDomain: "sangtr-switch.firebaseapp.com",
+      projectId: "sangtr-switch",
+      storageBucket: "sangtr-switch.appspot.com",
+      messagingSenderId: "123456789",
+      appId: "1:123456789:web:abcdef123456"
+    };
+
+    let app, db, auth;
+    let cloudDocRef = null;
+
+    // INITIAL SAMPLE DATA FOR FIRST SYNC
+    const INITIAL_DEVICES = [
+      { id: "1", serial: "XKW1001", model: "Switch V2", capacity: "64GB", price: 4200000, dateReceived: "2026-10-20", issue: "Joystick trái bị drift", status: "Đã nhập kho", branch: "Trụ sở Bình Tân", dateTechSend: "2026-10-21", dateTechReturn: "2026-10-24", techAction: "Thay joystick trái", note: "" },
+      { id: "2", serial: "XKW1002", model: "Switch V1 Mod Chip", capacity: "128GB", price: 4500000, dateReceived: "2026-10-20", issue: "Quạt kêu to", status: "Đã nhập kho", branch: "Chi nhánh Quận 5", dateTechSend: "2026-10-21", dateTechReturn: "2026-10-22", techAction: "Vệ sinh, tra quạt", note: "" },
+      { id: "3", serial: "XKW1003", model: "Switch Lite", capacity: "64GB", price: 3300000, dateReceived: "2026-10-20", issue: "Vỡ màn hình", status: "Đang ở kỹ thuật", branch: "KT - Bình Thạnh", dateTechSend: "2026-10-21", dateTechReturn: "", techAction: "", note: "Chờ linh kiện màn hình" },
+      { id: "4", serial: "XKW1004", model: "Switch OLED", capacity: "256GB", price: 6200000, dateReceived: "2026-10-20", issue: "Pin chai", status: "Đang ở kỹ thuật", branch: "KT - Bình Thạnh", dateTechSend: "2026-10-22", dateTechReturn: "", techAction: "", note: "" },
+      { id: "5", serial: "XKW1005", model: "Switch V1 Seri Xanh", capacity: "128GB", price: 4500000, dateReceived: "2026-10-25", issue: "Joystick phải kẹt", status: "Đang ở kỹ thuật", branch: "KT - Bình Thạnh", dateTechSend: "2026-10-26", dateTechReturn: "", techAction: "", note: "" },
+      { id: "6", serial: "XKW1006", model: "Switch V2", capacity: "64GB", price: 4200000, dateReceived: "2026-10-25", issue: "Nguyên vẹn", status: "Trong kho", branch: "Trụ sở Bình Tân", dateTechSend: "", dateTechReturn: "", techAction: "", note: "" },
+      { id: "7", serial: "XKW1007", model: "Switch OLED", capacity: "128GB", price: 5800000, dateReceived: "2026-10-25", issue: "Nguyên vẹn", status: "Trong kho", branch: "Chi nhánh Quận 5", dateTechSend: "", dateTechReturn: "", techAction: "", note: "" }
+    ];
+
+    // Safe LocalStorage Access (prevents DOMException inside strict Google Sites sandbox)
+    function loadFromLocalStorage() {
+      try {
+        if (typeof window.localStorage !== 'undefined') {
+          const localData = window.localStorage.getItem(LOCAL_STORAGE_KEY);
+          if (localData) return JSON.parse(localData);
+        }
+      } catch (e) {
+        console.warn("Google Sites Iframe blocks LocalStorage access:", e);
+      }
+      return null;
+    }
+
+    function saveToLocalStorage(newDevices) {
+      try {
+        if (typeof window.localStorage !== 'undefined') {
+          window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newDevices));
+        }
+      } catch (e) {
+        console.warn("Google Sites Iframe blocks LocalStorage writing:", e);
+      }
+    }
+
+    // Global Window Functions for Hybrid Storage Operations
+    window.syncCloudData = async function(newDevices) {
+      saveToLocalStorage(newDevices);
+
+      if (db && cloudDocRef) {
+        try {
+          await setDoc(cloudDocRef, { items: newDevices, updatedAt: new Date().toISOString() });
+          updateCloudBadge("Đã lưu Local & Cloud", "success");
+          return;
+        } catch (err) {
+          console.warn("Lỗi đồng bộ Cloud (dùng LocalStorage):", err);
+        }
+      }
+      updateCloudBadge("Đã lưu Bộ nhớ tạm", "success");
+    };
+
+    window.resetCloudData = async function() {
+      window.devices = [...INITIAL_DEVICES];
+      await window.syncCloudData(window.devices);
+      window.renderDashboard();
+      window.renderDeviceTable();
+      window.showToast("Đã khôi phục dữ liệu mẫu!", "success");
+    };
+
+    function updateCloudBadge(text, type = 'info') {
+      const badge = document.getElementById('cloud-status-badge');
+      if (!badge) return;
+      badge.textContent = text;
+      if (type === 'success') {
+        badge.className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200";
+      } else if (type === 'error') {
+        badge.className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 border border-rose-200";
+      } else {
+        badge.className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200";
+      }
+    }
+
+    // Initialize Hybrid Storage & Cloud Connection
+    async function initStorage() {
+      const savedLocal = loadFromLocalStorage();
+      if (savedLocal && Array.isArray(savedLocal) && savedLocal.length > 0) {
+        window.devices = savedLocal;
+      } else {
+        window.devices = [...INITIAL_DEVICES];
+        saveToLocalStorage(window.devices);
+      }
+
+      window.renderDashboard();
+      window.renderDeviceTable();
+      updateCloudBadge("Đã sẵn sàng", "success");
+
+      try {
+        app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+        auth = getAuth(app);
+
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+
+        cloudDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'store', 'switch_inventory');
+
+        onSnapshot(cloudDocRef, (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data();
+            if (data && Array.isArray(data.items) && data.items.length > 0) {
+              window.devices = data.items;
+              saveToLocalStorage(data.items);
+              window.renderDashboard();
+              window.renderDeviceTable();
+              updateCloudBadge("Đồng bộ Realtime Cloud", "success");
+            }
+          }
+        }, (error) => {
+          console.warn("Google Sites Iframe hạn chế Cloud API, chuyển sang lưu Local:", error);
+          updateCloudBadge("Lưu Bộ nhớ Trình duyệt", "success");
+        });
+
+      } catch (err) {
+        console.warn("Google Sites Sandbox Mode - Dùng LocalStorage:", err);
+        updateCloudBadge("Chế độ Google Sites", "success");
+      }
+    }
+
+    initStorage();
+  </script>
+
+  <!-- MAIN JAVASCRIPT APP LOGIC -->
+  <script>
+    // Global State
+    window.devices = [];
+    let statusChartInstance = null;
+    let modelChartInstance = null;
+    let activeQuickId = null;
+    let confirmCallback = null;
+
+    // CUSTOM MODAL CONFIRMATION (Fixes "blocked confirm()" in Google Sites embed)
+    function customConfirm(msg, title = "Xác nhận thao tác") {
+      return new Promise((resolve) => {
+        document.getElementById('confirm-modal-title').textContent = title;
+        document.getElementById('confirm-modal-msg').textContent = msg;
+        document.getElementById('confirm-modal').classList.remove('hidden');
+        if (window.lucide) lucide.createIcons();
+
+        confirmCallback = (result) => {
+          document.getElementById('confirm-modal').classList.add('hidden');
+          resolve(result);
+        };
+      });
+    }
+
+    function closeConfirmModal(result) {
+      if (typeof confirmCallback === 'function') {
+        confirmCallback(result);
+        confirmCallback = null;
+      }
+    }
+
+    async function promptResetData() {
+      const confirmed = await customConfirm('Bạn có muốn khôi phục dữ liệu kho về danh sách mặc định ban đầu không?', 'Khôi phục dữ liệu mẫu');
+      if (confirmed && typeof window.resetCloudData === 'function') {
+        window.resetCloudData();
+      }
+    }
+
+    // Tab Navigation
+    function switchTab(tabName) {
+      const viewDash = document.getElementById('view-dashboard');
+      const viewDev = document.getElementById('view-devices');
+      const tabDash = document.getElementById('tab-dashboard');
+      const tabDev = document.getElementById('tab-devices');
+
+      if (tabName === 'dashboard') {
+        viewDash.classList.remove('hidden');
+        viewDev.classList.add('hidden');
+        tabDash.className = "py-3 px-1 inline-flex items-center border-b-2 border-rose-600 text-rose-600 font-semibold text-sm gap-2 transition";
+        tabDev.className = "py-3 px-1 inline-flex items-center border-b-2 border-transparent text-slate-500 hover:text-slate-800 font-medium text-sm gap-2 transition";
+        renderDashboard();
+      } else {
+        viewDash.classList.add('hidden');
+        viewDev.classList.remove('hidden');
+        tabDev.className = "py-3 px-1 inline-flex items-center border-b-2 border-rose-600 text-rose-600 font-semibold text-sm gap-2 transition";
+        tabDash.className = "py-3 px-1 inline-flex items-center border-b-2 border-transparent text-slate-500 hover:text-slate-800 font-medium text-sm gap-2 transition";
+        renderDeviceTable();
+      }
+    }
+
+    // Save Helper Function
+    function saveDevicesToStorage() {
+      if (typeof window.syncCloudData === 'function') {
+        window.syncCloudData(window.devices);
+      }
+    }
+
+    // Toast Notification Helper
+    function showToast(message, type = 'success') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      
+      const bgColor = type === 'success' ? 'bg-slate-900 text-white border-emerald-500' : 'bg-rose-900 text-white border-rose-500';
+      const icon = type === 'success' ? '<i data-lucide="check-circle" class="w-5 h-5 text-emerald-400"></i>' : '<i data-lucide="alert-triangle" class="w-5 h-5 text-rose-400"></i>';
+
+      toast.className = `flex items-center gap-3 px-4 py-3 rounded-xl border shadow-xl transition-all duration-300 transform translate-y-2 opacity-0 pointer-events-auto ${bgColor}`;
+      toast.innerHTML = `${icon}<span class="text-sm font-medium">${message}</span>`;
+
+      container.appendChild(toast);
+      if (window.lucide) lucide.createIcons();
+
+      setTimeout(() => {
+        toast.classList.remove('translate-y-2', 'opacity-0');
+      }, 10);
+
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 4000);
+    }
+
+    // Helper Key Cleaner
+    function cleanKey(str) {
+      if (!str) return '';
+      return String(str).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, '');
+    }
+
+    // Excel Row Mapper
+    function parseExcelRow(row) {
+      const cleanRow = {};
+      Object.keys(row).forEach(k => { cleanRow[cleanKey(k)] = row[k]; });
+
+      const getValue = (keys) => {
+        for (const k of keys) {
+          const cleaned = cleanKey(k);
+          if (cleanRow[cleaned] !== undefined && cleanRow[cleaned] !== null && String(cleanRow[cleaned]).trim() !== '') {
+            return String(cleanRow[cleaned]).trim();
+          }
+        }
+        return '';
+      };
+
+      const serial = getValue(['Số Serial', 'Serial', 'So Serial', 'Serial Number']);
+      if (!serial) return null;
+
+      const rawModel = getValue(['Model', 'Dòng máy', 'Dong may']);
+      let model = 'Switch V2';
+      if (rawModel.toLowerCase().includes('oled')) model = 'Switch OLED';
+      else if (rawModel.toLowerCase().includes('lite')) model = 'Switch Lite';
+      else if (rawModel.toLowerCase().includes('v1 mod')) model = 'Switch V1 Mod Chip';
+      else if (rawModel.toLowerCase().includes('seri xanh')) model = 'Switch V1 Seri Xanh';
+      else if (rawModel.toLowerCase().includes('v1')) model = 'Switch V1';
+      else if (rawModel.toLowerCase().includes('2')) model = 'Switch 2';
+
+      const rawPrice = getValue(['Giá (VNĐ)', 'Giá', 'Gia', 'Giá máy']);
+      const price = Number(rawPrice.replace(/[^0-9]/g, '')) || 0;
+
+      const rawBranch = getValue(['Chi nhánh', 'Chi nhanh']);
+      let branch = 'Trụ sở Bình Tân';
+      if (rawBranch.includes('Bình Tân')) branch = 'Trụ sở Bình Tân';
+      else if (rawBranch.includes('Quận 5')) branch = 'Chi nhánh Quận 5';
+      else if (rawBranch.includes('Bình Thạnh') || rawBranch.includes('KT')) branch = 'KT - Bình Thạnh';
+
+      const rawStatus = getValue(['Trạng thái', 'Trang thai']);
+      let status = 'Trong kho';
+      if (rawStatus.toLowerCase().includes('kỹ thuật') || rawStatus.toLowerCase().includes('kt')) status = 'Đang ở kỹ thuật';
+      else if (rawStatus.toLowerCase().includes('đã nhập') || rawStatus.toLowerCase().includes('da nhap')) status = 'Đã nhập kho';
+
+      return {
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+        serial: serial.toUpperCase(),
+        model: model,
+        capacity: getValue(['Dung lượng', 'Dung lượng thẻ', 'SD']) || '64GB',
+        price: price,
+        dateReceived: getValue(['Ngày nhận', 'Ngay nhan']) || new Date().toISOString().split('T')[0],
+        issue: getValue(['Tình trạng lỗi', 'Lỗi ban đầu', 'Tình trạng', 'Loi']) || 'Nguyên vẹn',
+        status: status,
+        branch: branch,
+        dateTechSend: getValue(['Ngày gửi KT', 'Ngay gui KT']) || '',
+        dateTechReturn: getValue(['Ngày nhận KT', 'Ngay nhan KT']) || '',
+        techAction: getValue(['Kỹ thuật xử lý', 'KT xử lý']) || '',
+        note: getValue(['Ghi chú', 'Ghi chu']) || ''
+      };
+    }
+
+    // Handle Excel File Upload
+    function handleFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          let targetSheetName = workbook.SheetNames[0];
+          for (const name of workbook.SheetNames) {
+            if (name.toLowerCase().includes('danh sách')) { targetSheetName = name; break; }
+          }
+          const worksheet = workbook.Sheets[targetSheetName];
+          const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+          if (!jsonData || jsonData.length === 0) {
+            showToast("File Excel/CSV không có dữ liệu!", "error");
+            return;
+          }
+
+          const importedDevices = [];
+          jsonData.forEach(row => {
+            const dev = parseExcelRow(row);
+            if (dev) importedDevices.push(dev);
+          });
+
+          if (importedDevices.length === 0) {
+            showToast("Không tìm thấy dữ liệu máy hợp lệ (Cột Serial bắt buộc)!", "error");
+            return;
+          }
+
+          window.devices = importedDevices;
+          saveDevicesToStorage();
+          renderDashboard();
+          renderDeviceTable();
+          showToast(`Đã nạp ${importedDevices.length} máy thành công!`, "success");
+
+        } catch (err) {
+          console.error("Lỗi đọc Excel:", err);
+          showToast("Có lỗi xảy ra khi xử lý file Excel!", "error");
+        } finally {
+          event.target.value = '';
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    // Export to Excel
+    function exportToExcel() {
+      if (!window.devices || window.devices.length === 0) {
+        showToast("Không có dữ liệu để xuất!", "error");
+        return;
+      }
+
+      const exportData = window.devices.map((d, idx) => ({
+        "STT": idx + 1,
+        "Số Serial": d.serial,
+        "Model": d.model,
+        "Dung Lượng": d.capacity || '64GB',
+        "Giá (VNĐ)": d.price,
+        "Ngày Nhận": d.dateReceived || '',
+        "Tình Trạng Lỗi": d.issue || '',
+        "Trạng Thái": d.status,
+        "Chi Nhánh": d.branch || '',
+        "Ngày Gửi KT": d.dateTechSend || '',
+        "Ngày Nhận KT": d.dateTechReturn || '',
+        "Kỹ Thuật Xử Lý": d.techAction || '',
+        "Ghi Chú": d.note || ''
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      worksheet['!cols'] = [{ wch: 6 }, { wch: 14 }, { wch: 18 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 22 }, { wch: 16 }, { wch: 20 }, { wch: 14 }, { wch: 14 }, { wch: 24 }, { wch: 20 }];
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Danh sách máy Switch");
+      XLSX.writeFile(workbook, `Quan_ly_kho_SangTR_${new Date().toISOString().split('T')[0]}.xlsx`);
+      showToast("Đã xuất file Excel thành công!");
+    }
+
+    // Render Dashboard & Stats
+    function renderDashboard() {
+      const devList = window.devices || [];
+      const totalCount = devList.length;
+      const inStock = devList.filter(d => d.status === 'Trong kho').length;
+      const inTech = devList.filter(d => d.status === 'Đang ở kỹ thuật').length;
+      const received = devList.filter(d => d.status === 'Đã nhập kho').length;
+      
+      const refDate = new Date("2026-10-27");
+      let over7Days = 0;
+
+      devList.forEach(d => {
+        if (d.status === 'Đang ở kỹ thuật' && d.dateTechSend) {
+          const sendDate = new Date(d.dateTechSend);
+          const diffDays = Math.floor((refDate - sendDate) / (1000 * 60 * 60 * 24));
+          if (diffDays > 7) over7Days++;
+        }
+      });
+
+      const totalVal = devList.reduce((sum, d) => sum + (Number(d.price) || 0), 0);
+
+      document.getElementById('kpi-total').textContent = totalCount;
+      document.getElementById('kpi-in-stock').textContent = inStock;
+      document.getElementById('kpi-in-tech').textContent = inTech;
+      document.getElementById('kpi-received').textContent = received;
+      document.getElementById('kpi-over-7days').textContent = over7Days;
+      document.getElementById('kpi-total-value').textContent = totalVal.toLocaleString('vi-VN') + ' ₫';
+      document.getElementById('total-count-badge').textContent = totalCount;
+
+      renderCharts(inStock, inTech, received, devList);
+      renderBranchSummary(devList);
+    }
+
+    // Render Charts using Chart.js
+    function renderCharts(inStock, inTech, received, devList) {
+      const ctxStatus = document.getElementById('statusChart').getContext('2d');
+      if (statusChartInstance) statusChartInstance.destroy();
+      statusChartInstance = new Chart(ctxStatus, {
+        type: 'doughnut',
+        data: {
+          labels: ['Trong kho', 'Đang ở kỹ thuật', 'Đã nhập kho'],
+          datasets: [{
+            data: [inStock, inTech, received],
+            backgroundColor: ['#10b981', '#f59e0b', '#06b6d4'],
+            borderWidth: 2,
+            borderColor: '#ffffff'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'bottom' } }
+        }
+      });
+
+      const modelCounts = {
+        'Switch V1 Mod Chip': 0,
+        'Switch V1 Seri Xanh': 0,
+        'Switch V1': 0,
+        'Switch V2': 0,
+        'Switch Lite': 0,
+        'Switch OLED': 0,
+        'Switch 2': 0
+      };
+
+      devList.forEach(d => {
+        if (modelCounts[d.model] !== undefined) modelCounts[d.model]++;
+        else modelCounts[d.model] = 1;
+      });
+
+      const ctxModel = document.getElementById('modelChart').getContext('2d');
+      if (modelChartInstance) modelChartInstance.destroy();
+      modelChartInstance = new Chart(ctxModel, {
+        type: 'bar',
+        data: {
+          labels: Object.keys(modelCounts),
+          datasets: [{
+            label: 'Số lượng máy',
+            data: Object.values(modelCounts),
+            backgroundColor: ['#6366f1', '#3b82f6', '#0ea5e9', '#14b8a6', '#f43f5e', '#ec4899', '#8b5cf6'],
+            borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+        }
+      });
+    }
+
+    // Render Branch Summary Table
+    function renderBranchSummary(devList) {
+      const branches = ['Trụ sở Bình Tân', 'Chi nhánh Quận 5', 'KT - Bình Thạnh'];
+      const tbody = document.getElementById('branch-stats-table');
+      tbody.innerHTML = '';
+
+      branches.forEach(b => {
+        const bDevices = devList.filter(d => d.branch === b);
+        const bTotal = bDevices.length;
+        const bInStock = bDevices.filter(d => d.status === 'Trong kho').length;
+        const bInTech = bDevices.filter(d => d.status === 'Đang ở kỹ thuật').length;
+        const bReceived = bDevices.filter(d => d.status === 'Đã nhập kho').length;
+        const bValue = bDevices.reduce((sum, d) => sum + (Number(d.price) || 0), 0);
+
+        const tr = document.createElement('tr');
+        tr.className = "hover:bg-slate-50 transition border-b border-slate-100";
+        tr.innerHTML = `
+          <td class="py-3 px-4 font-semibold text-slate-800 flex items-center gap-2">
+            <i data-lucide="map-pin" class="w-4 h-4 text-rose-500"></i> ${b}
+          </td>
+          <td class="py-3 px-4 font-bold text-slate-900">${bTotal}</td>
+          <td class="py-3 px-4 text-emerald-600 font-medium">${bInStock}</td>
+          <td class="py-3 px-4 text-amber-600 font-medium">${bInTech}</td>
+          <td class="py-3 px-4 text-cyan-600 font-medium">${bReceived}</td>
+          <td class="py-3 px-4 font-semibold text-slate-800">${bValue.toLocaleString('vi-VN')} ₫</td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      if (window.lucide) lucide.createIcons();
+    }
+
+    // Render Devices Table
+    function renderDeviceTable() {
+      const tbody = document.getElementById('device-table-body');
+      const emptyState = document.getElementById('empty-state');
+      tbody.innerHTML = '';
+
+      const search = cleanKey(document.getElementById('filter-search')?.value || '');
+      const statusF = document.getElementById('filter-status')?.value || '';
+      const branchF = document.getElementById('filter-branch')?.value || '';
+      const modelF = document.getElementById('filter-model')?.value || '';
+
+      const filtered = (window.devices || []).filter(d => {
+        const matchSearch = !search || cleanKey(d.serial).includes(search) || cleanKey(d.issue).includes(search) || cleanKey(d.note).includes(search) || cleanKey(d.techAction).includes(search);
+        const matchStatus = !statusF || d.status === statusF;
+        const matchBranch = !branchF || d.branch === branchF;
+        const matchModel = !modelF || d.model === modelF;
+        return matchSearch && matchStatus && matchBranch && matchModel;
+      });
+
+      if (filtered.length === 0) {
+        emptyState.classList.remove('hidden');
+        return;
+      } else {
+        emptyState.classList.add('hidden');
+      }
+
+      const refDate = new Date("2026-10-27");
+
+      filtered.forEach(d => {
+        let statusBadge = '';
+        if (d.status === 'Trong kho') statusBadge = '<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Trong kho</span>';
+        else if (d.status === 'Đang ở kỹ thuật') statusBadge = '<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200"><span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>Đang ở kỹ thuật</span>';
+        else statusBadge = '<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-cyan-50 text-cyan-700 border border-cyan-200"><span class="w-1.5 h-1.5 rounded-full bg-cyan-500"></span>Đã nhập kho</span>';
+
+        let daysTechText = '-';
+        if (d.status === 'Đang ở kỹ thuật' && d.dateTechSend) {
+          const sendDate = new Date(d.dateTechSend);
+          const diffDays = Math.floor((refDate - sendDate) / (1000 * 60 * 60 * 24));
+          daysTechText = `<span class="${diffDays > 7 ? 'text-rose-600 font-bold bg-rose-50 px-2 py-0.5 rounded' : 'text-slate-600'}">${diffDays} ngày</span>`;
+        } else if (d.dateTechSend && d.dateTechReturn) {
+          const sendDate = new Date(d.dateTechSend);
+          const returnDate = new Date(d.dateTechReturn);
+          const diffDays = Math.floor((returnDate - sendDate) / (1000 * 60 * 60 * 24));
+          daysTechText = `${diffDays} ngày (hoàn tất)`;
+        }
+
+        const tr = document.createElement('tr');
+        tr.className = "hover:bg-slate-50 transition border-b border-slate-100 text-slate-700";
+        tr.innerHTML = `
+          <td class="py-3 px-3.5 font-bold text-slate-900">${d.serial}</td>
+          <td class="py-3 px-3.5"><div class="font-semibold text-slate-800">${d.model}</div><div class="text-xs text-slate-400">${d.capacity || '64GB'}</div></td>
+          <td class="py-3 px-3.5 font-semibold text-slate-900">${(Number(d.price) || 0).toLocaleString('vi-VN')} ₫</td>
+          <td class="py-3 px-3.5 whitespace-nowrap min-w-[150px] font-medium text-slate-700">${d.branch || 'Chưa gán'}</td>
+          <td class="py-3 px-3.5 whitespace-nowrap min-w-[160px]">${statusBadge}</td>
+          <td class="py-3 px-3.5 text-slate-600 max-w-[180px] truncate" title="${d.issue || ''}">${d.issue || '-'}</td>
+          <td class="py-3 px-3.5 text-xs text-slate-500">${daysTechText}</td>
+          <td class="py-3 px-3.5 text-slate-600 max-w-[200px] truncate" title="${d.techAction || d.note || ''}">${d.techAction || d.note || '-'}</td>
+          <td class="py-3 px-3.5 text-right space-x-1 whitespace-nowrap">
+            <button onclick="openStatusModal('${d.id}')" title="Đổi trạng thái nhanh" class="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
+            <button onclick="editDevice('${d.id}')" title="Sửa chi tiết" class="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition"><i data-lucide="pencil" class="w-4 h-4"></i></button>
+            <button onclick="deleteDevice('${d.id}')" title="Xóa máy" class="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      if (window.lucide) lucide.createIcons();
+    }
+
+    function applyFilters() {
+      renderDeviceTable();
+    }
+
+    // Modal Control
+    function openModal(mode = 'add') {
+      document.getElementById('device-form').reset();
+      document.getElementById('form-id').value = '';
+      document.getElementById('modal-title').innerHTML = mode === 'add' ? '<i data-lucide="plus-circle" class="w-5 h-5 text-rose-600"></i> Thêm máy Switch mới' : '<i data-lucide="edit-3" class="w-5 h-5 text-blue-600"></i> Chỉnh sửa thông tin máy';
+      document.getElementById('form-date-received').value = new Date().toISOString().split('T')[0];
+      document.getElementById('device-modal').classList.remove('hidden');
+      if (window.lucide) lucide.createIcons();
+    }
+
+    function closeModal() {
+      document.getElementById('device-modal').classList.add('hidden');
+    }
+
+    function editDevice(id) {
+      const dev = (window.devices || []).find(d => d.id === id);
+      if (!dev) return;
+
+      document.getElementById('form-id').value = dev.id;
+      document.getElementById('form-serial').value = dev.serial;
+      document.getElementById('form-model').value = dev.model;
+      document.getElementById('form-capacity').value = dev.capacity || '64GB';
+      document.getElementById('form-price').value = dev.price;
+      document.getElementById('form-branch').value = dev.branch || 'Trụ sở Bình Tân';
+      document.getElementById('form-status').value = dev.status;
+      document.getElementById('form-date-received').value = dev.dateReceived || '';
+      document.getElementById('form-date-tech-send').value = dev.dateTechSend || '';
+      document.getElementById('form-date-tech-return').value = dev.dateTechReturn || '';
+      document.getElementById('form-issue').value = dev.issue || '';
+      document.getElementById('form-tech-action').value = dev.techAction || '';
+      document.getElementById('form-note').value = dev.note || '';
+
+      openModal('edit');
+    }
+
+    function saveDevice(e) {
+      if (e) e.preventDefault();
+      const id = document.getElementById('form-id').value;
+
+      const deviceData = {
+        id: id || (Date.now().toString() + Math.random().toString(36).substr(2, 4)),
+        serial: document.getElementById('form-serial').value.trim().toUpperCase(),
+        model: document.getElementById('form-model').value,
+        capacity: document.getElementById('form-capacity').value,
+        price: Number(document.getElementById('form-price').value) || 0,
+        dateReceived: document.getElementById('form-date-received').value,
+        branch: document.getElementById('form-branch').value,
+        status: document.getElementById('form-status').value,
+        dateTechSend: document.getElementById('form-date-tech-send').value,
+        dateTechReturn: document.getElementById('form-date-tech-return').value,
+        techAction: document.getElementById('form-tech-action').value.trim(),
+        issue: document.getElementById('form-issue').value.trim(),
+        note: document.getElementById('form-note').value.trim()
+      };
+
+      if (id) {
+        const idx = window.devices.findIndex(d => d.id === id);
+        if (idx !== -1) window.devices[idx] = deviceData;
+        showToast(`Đã cập nhật máy ${deviceData.serial}`);
+      } else {
+        window.devices.unshift(deviceData);
+        showToast(`Đã thêm máy mới ${deviceData.serial}`);
+      }
+
+      saveDevicesToStorage();
+      closeModal();
+      renderDashboard();
+      renderDeviceTable();
+      switchTab('devices');
+    }
+
+    async function deleteDevice(id) {
+      const dev = window.devices.find(d => d.id === id);
+      if (!dev) return;
+      const confirmed = await customConfirm(`Bạn có chắc chắn muốn xóa máy Serial: ${dev.serial} khỏi hệ thống không?`, 'Xóa máy Switch');
+      if (confirmed) {
+        window.devices = window.devices.filter(d => d.id !== id);
+        saveDevicesToStorage();
+        renderDashboard();
+        renderDeviceTable();
+        showToast(`Đã xóa máy ${dev.serial}`, "error");
+      }
+    }
+
+    // Quick Status Modal
+    function openStatusModal(id) {
+      const dev = window.devices.find(d => d.id === id);
+      if (!dev) return;
+      activeQuickId = id;
+      document.getElementById('status-modal-serial').textContent = `Số Serial: ${dev.serial} (${dev.model})`;
+      document.getElementById('quick-status').value = dev.status;
+      document.getElementById('quick-branch').value = dev.branch || 'Trụ sở Bình Tân';
+      document.getElementById('quick-tech').value = dev.techAction || '';
+      document.getElementById('status-modal').classList.remove('hidden');
+    }
+
+    function closeStatusModal() {
+      document.getElementById('status-modal').classList.add('hidden');
+      activeQuickId = null;
+    }
+
+    function saveQuickStatus() {
+      if (!activeQuickId) return;
+      const dev = window.devices.find(d => d.id === activeQuickId);
+      if (dev) {
+        const oldStatus = dev.status;
+        const newStatus = document.getElementById('quick-status').value;
+        dev.status = newStatus;
+        dev.branch = document.getElementById('quick-branch').value;
+        dev.techAction = document.getElementById('quick-tech').value.trim();
+
+        const todayStr = new Date().toISOString().split('T')[0];
+        if (newStatus === 'Đang ở kỹ thuật' && oldStatus !== 'Đang ở kỹ thuật') {
+          dev.dateTechSend = todayStr;
+        } else if (newStatus === 'Đã nhập kho' && oldStatus === 'Đang ở kỹ thuật') {
+          dev.dateTechReturn = todayStr;
+        }
+
+        saveDevicesToStorage();
+        renderDashboard();
+        renderDeviceTable();
+        showToast(`Đã cập nhật trạng thái máy ${dev.serial}`);
+      }
+      closeStatusModal();
+    }
+  </script>
+</body>
+</html>
