@@ -49,9 +49,9 @@
           <div>
             <h1 class="font-bold text-lg text-slate-900 tracking-tight flex items-center gap-2">
               QUẢN LÝ KHO SHOP SANG TR
-              <span id="cloud-status-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">Đang kết nối Cloud...</span>
+              <span id="cloud-status-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">GitHub LocalStorage</span>
             </h1>
-            <p class="text-xs text-slate-500">Hệ thống theo dõi kho & kiểm soát kỹ thuật máy Switch (Đồng bộ thời gian thực)</p>
+            <p class="text-xs text-slate-500">Hệ thống theo dõi kho & kiểm soát kỹ thuật máy Switch</p>
           </div>
         </div>
 
@@ -318,7 +318,8 @@
 
       <!-- Modal Form -->
       <form id="device-form" onsubmit="saveDevice(event)" class="p-6 space-y-4">
-        <input type="hidden" id="form-id">
+        <!-- INPUT HIDDEN CHO ID -->
+        <input type="hidden" id="form-id" value="">
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <!-- Serial -->
@@ -464,7 +465,7 @@
     </div>
   </div>
 
-  <!-- MODAL: CONFIRMATION DIALOG (Fix Google Sites iframe confirm() error) -->
+  <!-- MODAL: CONFIRMATION DIALOG -->
   <div id="confirm-modal" class="hidden fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
     <div class="bg-white rounded-xl border border-slate-200 shadow-2xl w-full max-w-sm p-6 text-center">
       <div class="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-3">
@@ -479,30 +480,18 @@
     </div>
   </div>
 
-  <!-- FIREBASE CLOUD DATABASE MODULE INTEGRATION & LOCAL STORAGE HYBRID -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+  <!-- MAIN JAVASCRIPT APP LOGIC -->
+  <script>
+    const LOCAL_STORAGE_KEY = 'SANGTR_SWITCH_INVENTORY_DATA_V3';
 
-    // Key để lưu LocalStorage khi chạy trong Google Sites iframe
-    const LOCAL_STORAGE_KEY = 'SANGTR_SWITCH_INVENTORY_DATA_V1';
+    // Global State
+    window.devices = [];
+    let statusChartInstance = null;
+    let modelChartInstance = null;
+    let activeQuickId = null;
+    let confirmCallback = null;
 
-    // App ID & Firebase Config
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'sangtr-switch-app';
-    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
-      apiKey: "AIzaSyDummyKeyForGoogleSitesCloudV1",
-      authDomain: "sangtr-switch.firebaseapp.com",
-      projectId: "sangtr-switch",
-      storageBucket: "sangtr-switch.appspot.com",
-      messagingSenderId: "123456789",
-      appId: "1:123456789:web:abcdef123456"
-    };
-
-    let app, db, auth;
-    let cloudDocRef = null;
-
-    // INITIAL SAMPLE DATA FOR FIRST SYNC
+    // INITIAL SAMPLE DATA
     const INITIAL_DEVICES = [
       { id: "1", serial: "XKW1001", model: "Switch V2", capacity: "64GB", price: 4200000, dateReceived: "2026-10-20", issue: "Joystick trái bị drift", status: "Đã nhập kho", branch: "Trụ sở Bình Tân", dateTechSend: "2026-10-21", dateTechReturn: "2026-10-24", techAction: "Thay joystick trái", note: "" },
       { id: "2", serial: "XKW1002", model: "Switch V1 Mod Chip", capacity: "128GB", price: 4500000, dateReceived: "2026-10-20", issue: "Quạt kêu to", status: "Đã nhập kho", branch: "Chi nhánh Quận 5", dateTechSend: "2026-10-21", dateTechReturn: "2026-10-22", techAction: "Vệ sinh, tra quạt", note: "" },
@@ -513,128 +502,33 @@
       { id: "7", serial: "XKW1007", model: "Switch OLED", capacity: "128GB", price: 5800000, dateReceived: "2026-10-25", issue: "Nguyên vẹn", status: "Trong kho", branch: "Chi nhánh Quận 5", dateTechSend: "", dateTechReturn: "", techAction: "", note: "" }
     ];
 
-    // Safe LocalStorage Access (prevents DOMException inside strict Google Sites sandbox)
+    // LocalStorage Helper
     function loadFromLocalStorage() {
       try {
-        if (typeof window.localStorage !== 'undefined') {
-          const localData = window.localStorage.getItem(LOCAL_STORAGE_KEY);
-          if (localData) return JSON.parse(localData);
+        const localData = localStorage.getItem(LOCAL_STORAGE_KEY);
+        if (localData) {
+          const parsed = JSON.parse(localData);
+          return parsed.map(d => ({ ...d, id: String(d.id) }));
         }
       } catch (e) {
-        console.warn("Google Sites Iframe blocks LocalStorage access:", e);
+        console.warn("LocalStorage access blocked:", e);
       }
       return null;
     }
 
     function saveToLocalStorage(newDevices) {
       try {
-        if (typeof window.localStorage !== 'undefined') {
-          window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newDevices));
-        }
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newDevices));
       } catch (e) {
-        console.warn("Google Sites Iframe blocks LocalStorage writing:", e);
+        console.warn("LocalStorage write blocked:", e);
       }
     }
 
-    // Global Window Functions for Hybrid Storage Operations
-    window.syncCloudData = async function(newDevices) {
-      saveToLocalStorage(newDevices);
-
-      if (db && cloudDocRef) {
-        try {
-          await setDoc(cloudDocRef, { items: newDevices, updatedAt: new Date().toISOString() });
-          updateCloudBadge("Đã lưu Local & Cloud", "success");
-          return;
-        } catch (err) {
-          console.warn("Lỗi đồng bộ Cloud (dùng LocalStorage):", err);
-        }
-      }
-      updateCloudBadge("Đã lưu Bộ nhớ tạm", "success");
-    };
-
-    window.resetCloudData = async function() {
-      window.devices = [...INITIAL_DEVICES];
-      await window.syncCloudData(window.devices);
-      window.renderDashboard();
-      window.renderDeviceTable();
-      window.showToast("Đã khôi phục dữ liệu mẫu!", "success");
-    };
-
-    function updateCloudBadge(text, type = 'info') {
-      const badge = document.getElementById('cloud-status-badge');
-      if (!badge) return;
-      badge.textContent = text;
-      if (type === 'success') {
-        badge.className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200";
-      } else if (type === 'error') {
-        badge.className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 border border-rose-200";
-      } else {
-        badge.className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200";
-      }
+    function saveDevicesToStorage() {
+      saveToLocalStorage(window.devices);
     }
 
-    // Initialize Hybrid Storage & Cloud Connection
-    async function initStorage() {
-      const savedLocal = loadFromLocalStorage();
-      if (savedLocal && Array.isArray(savedLocal) && savedLocal.length > 0) {
-        window.devices = savedLocal;
-      } else {
-        window.devices = [...INITIAL_DEVICES];
-        saveToLocalStorage(window.devices);
-      }
-
-      window.renderDashboard();
-      window.renderDeviceTable();
-      updateCloudBadge("Đã sẵn sàng", "success");
-
-      try {
-        app = initializeApp(firebaseConfig);
-        db = getFirestore(app);
-        auth = getAuth(app);
-
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
-
-        cloudDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'store', 'switch_inventory');
-
-        onSnapshot(cloudDocRef, (snapshot) => {
-          if (snapshot.exists()) {
-            const data = snapshot.data();
-            if (data && Array.isArray(data.items) && data.items.length > 0) {
-              window.devices = data.items;
-              saveToLocalStorage(data.items);
-              window.renderDashboard();
-              window.renderDeviceTable();
-              updateCloudBadge("Đồng bộ Realtime Cloud", "success");
-            }
-          }
-        }, (error) => {
-          console.warn("Google Sites Iframe hạn chế Cloud API, chuyển sang lưu Local:", error);
-          updateCloudBadge("Lưu Bộ nhớ Trình duyệt", "success");
-        });
-
-      } catch (err) {
-        console.warn("Google Sites Sandbox Mode - Dùng LocalStorage:", err);
-        updateCloudBadge("Chế độ Google Sites", "success");
-      }
-    }
-
-    initStorage();
-  </script>
-
-  <!-- MAIN JAVASCRIPT APP LOGIC -->
-  <script>
-    // Global State
-    window.devices = [];
-    let statusChartInstance = null;
-    let modelChartInstance = null;
-    let activeQuickId = null;
-    let confirmCallback = null;
-
-    // CUSTOM MODAL CONFIRMATION (Fixes "blocked confirm()" in Google Sites embed)
+    // Modal Confirmation Custom
     function customConfirm(msg, title = "Xác nhận thao tác") {
       return new Promise((resolve) => {
         document.getElementById('confirm-modal-title').textContent = title;
@@ -658,8 +552,12 @@
 
     async function promptResetData() {
       const confirmed = await customConfirm('Bạn có muốn khôi phục dữ liệu kho về danh sách mặc định ban đầu không?', 'Khôi phục dữ liệu mẫu');
-      if (confirmed && typeof window.resetCloudData === 'function') {
-        window.resetCloudData();
+      if (confirmed) {
+        window.devices = INITIAL_DEVICES.map(d => ({ ...d, id: String(d.id) }));
+        saveDevicesToStorage();
+        renderDashboard();
+        renderDeviceTable();
+        showToast("Đã khôi phục dữ liệu mẫu!", "success");
       }
     }
 
@@ -682,13 +580,6 @@
         tabDev.className = "py-3 px-1 inline-flex items-center border-b-2 border-rose-600 text-rose-600 font-semibold text-sm gap-2 transition";
         tabDash.className = "py-3 px-1 inline-flex items-center border-b-2 border-transparent text-slate-500 hover:text-slate-800 font-medium text-sm gap-2 transition";
         renderDeviceTable();
-      }
-    }
-
-    // Save Helper Function
-    function saveDevicesToStorage() {
-      if (typeof window.syncCloudData === 'function') {
-        window.syncCloudData(window.devices);
       }
     }
 
@@ -716,13 +607,11 @@
       }, 4000);
     }
 
-    // Helper Key Cleaner
     function cleanKey(str) {
       if (!str) return '';
       return String(str).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, '');
     }
 
-    // Excel Row Mapper
     function parseExcelRow(row) {
       const cleanRow = {};
       Object.keys(row).forEach(k => { cleanRow[cleanKey(k)] = row[k]; });
@@ -764,7 +653,7 @@
       else if (rawStatus.toLowerCase().includes('đã nhập') || rawStatus.toLowerCase().includes('da nhap')) status = 'Đã nhập kho';
 
       return {
-        id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+        id: String(Date.now() + Math.random().toString(36).substr(2, 5)),
         serial: serial.toUpperCase(),
         model: model,
         capacity: getValue(['Dung lượng', 'Dung lượng thẻ', 'SD']) || '64GB',
@@ -780,7 +669,6 @@
       };
     }
 
-    // Handle Excel File Upload
     function handleFileUpload(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -829,7 +717,6 @@
       reader.readAsArrayBuffer(file);
     }
 
-    // Export to Excel
     function exportToExcel() {
       if (!window.devices || window.devices.length === 0) {
         showToast("Không có dữ liệu để xuất!", "error");
@@ -860,7 +747,6 @@
       showToast("Đã xuất file Excel thành công!");
     }
 
-    // Render Dashboard & Stats
     function renderDashboard() {
       const devList = window.devices || [];
       const totalCount = devList.length;
@@ -868,7 +754,7 @@
       const inTech = devList.filter(d => d.status === 'Đang ở kỹ thuật').length;
       const received = devList.filter(d => d.status === 'Đã nhập kho').length;
       
-      const refDate = new Date("2026-10-27");
+      const refDate = new Date();
       let over7Days = 0;
 
       devList.forEach(d => {
@@ -893,7 +779,6 @@
       renderBranchSummary(devList);
     }
 
-    // Render Charts using Chart.js
     function renderCharts(inStock, inTech, received, devList) {
       const ctxStatus = document.getElementById('statusChart').getContext('2d');
       if (statusChartInstance) statusChartInstance.destroy();
@@ -952,7 +837,6 @@
       });
     }
 
-    // Render Branch Summary Table
     function renderBranchSummary(devList) {
       const branches = ['Trụ sở Bình Tân', 'Chi nhánh Quận 5', 'KT - Bình Thạnh'];
       const tbody = document.getElementById('branch-stats-table');
@@ -984,7 +868,6 @@
       if (window.lucide) lucide.createIcons();
     }
 
-    // Render Devices Table
     function renderDeviceTable() {
       const tbody = document.getElementById('device-table-body');
       const emptyState = document.getElementById('empty-state');
@@ -1010,7 +893,7 @@
         emptyState.classList.add('hidden');
       }
 
-      const refDate = new Date("2026-10-27");
+      const refDate = new Date();
 
       filtered.forEach(d => {
         let statusBadge = '';
@@ -1022,12 +905,12 @@
         if (d.status === 'Đang ở kỹ thuật' && d.dateTechSend) {
           const sendDate = new Date(d.dateTechSend);
           const diffDays = Math.floor((refDate - sendDate) / (1000 * 60 * 60 * 24));
-          daysTechText = `<span class="${diffDays > 7 ? 'text-rose-600 font-bold bg-rose-50 px-2 py-0.5 rounded' : 'text-slate-600'}">${diffDays} ngày</span>`;
+          daysTechText = `<span class="${diffDays > 7 ? 'text-rose-600 font-bold bg-rose-50 px-2 py-0.5 rounded' : 'text-slate-600'}">${diffDays < 0 ? 0 : diffDays} ngày</span>`;
         } else if (d.dateTechSend && d.dateTechReturn) {
           const sendDate = new Date(d.dateTechSend);
           const returnDate = new Date(d.dateTechReturn);
           const diffDays = Math.floor((returnDate - sendDate) / (1000 * 60 * 60 * 24));
-          daysTechText = `${diffDays} ngày (hoàn tất)`;
+          daysTechText = `${diffDays < 0 ? 0 : diffDays} ngày (hoàn tất)`;
         }
 
         const tr = document.createElement('tr');
@@ -1042,9 +925,9 @@
           <td class="py-3 px-3.5 text-xs text-slate-500">${daysTechText}</td>
           <td class="py-3 px-3.5 text-slate-600 max-w-[200px] truncate" title="${d.techAction || d.note || ''}">${d.techAction || d.note || '-'}</td>
           <td class="py-3 px-3.5 text-right space-x-1 whitespace-nowrap">
-            <button onclick="openStatusModal('${d.id}')" title="Đổi trạng thái nhanh" class="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
-            <button onclick="editDevice('${d.id}')" title="Sửa chi tiết" class="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition"><i data-lucide="pencil" class="w-4 h-4"></i></button>
-            <button onclick="deleteDevice('${d.id}')" title="Xóa máy" class="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+            <button onclick="openStatusModal('${String(d.id)}')" title="Đổi trạng thái nhanh" class="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
+            <button onclick="editDevice('${String(d.id)}')" title="Sửa chi tiết" class="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition"><i data-lucide="pencil" class="w-4 h-4"></i></button>
+            <button onclick="deleteDevice('${String(d.id)}')" title="Xóa máy" class="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
           </td>
         `;
         tbody.appendChild(tr);
@@ -1057,47 +940,56 @@
       renderDeviceTable();
     }
 
-    // Modal Control
+    // Modal Control & Fix Update Issue
     function openModal(mode = 'add') {
-      document.getElementById('device-form').reset();
-      document.getElementById('form-id').value = '';
-      document.getElementById('modal-title').innerHTML = mode === 'add' ? '<i data-lucide="plus-circle" class="w-5 h-5 text-rose-600"></i> Thêm máy Switch mới' : '<i data-lucide="edit-3" class="w-5 h-5 text-blue-600"></i> Chỉnh sửa thông tin máy';
-      document.getElementById('form-date-received').value = new Date().toISOString().split('T')[0];
+      if (mode === 'add') {
+        document.getElementById('device-form').reset();
+        document.getElementById('form-id').value = '';
+        document.getElementById('modal-title').innerHTML = '<i data-lucide="plus-circle" class="w-5 h-5 text-rose-600"></i> Thêm máy Switch mới';
+        document.getElementById('form-date-received').value = new Date().toISOString().split('T')[0];
+      } else {
+        document.getElementById('modal-title').innerHTML = '<i data-lucide="edit-3" class="w-5 h-5 text-blue-600"></i> Chỉnh sửa thông tin máy';
+      }
       document.getElementById('device-modal').classList.remove('hidden');
       if (window.lucide) lucide.createIcons();
     }
 
     function closeModal() {
       document.getElementById('device-modal').classList.add('hidden');
+      document.getElementById('form-id').value = '';
     }
 
     function editDevice(id) {
-      const dev = (window.devices || []).find(d => d.id === id);
+      const targetId = String(id).trim();
+      const dev = (window.devices || []).find(d => String(d.id).trim() === targetId);
       if (!dev) return;
 
-      document.getElementById('form-id').value = dev.id;
-      document.getElementById('form-serial').value = dev.serial;
-      document.getElementById('form-model').value = dev.model;
+      openModal('edit');
+
+      // Gán chắc chắn ID dạng chuỗi
+      document.getElementById('form-id').value = String(dev.id);
+      document.getElementById('form-serial').value = dev.serial || '';
+      document.getElementById('form-model').value = dev.model || 'Switch V2';
       document.getElementById('form-capacity').value = dev.capacity || '64GB';
-      document.getElementById('form-price').value = dev.price;
+      document.getElementById('form-price').value = dev.price || 0;
       document.getElementById('form-branch').value = dev.branch || 'Trụ sở Bình Tân';
-      document.getElementById('form-status').value = dev.status;
+      document.getElementById('form-status').value = dev.status || 'Trong kho';
       document.getElementById('form-date-received').value = dev.dateReceived || '';
       document.getElementById('form-date-tech-send').value = dev.dateTechSend || '';
       document.getElementById('form-date-tech-return').value = dev.dateTechReturn || '';
       document.getElementById('form-issue').value = dev.issue || '';
       document.getElementById('form-tech-action').value = dev.techAction || '';
       document.getElementById('form-note').value = dev.note || '';
-
-      openModal('edit');
     }
 
     function saveDevice(e) {
       if (e) e.preventDefault();
-      const id = document.getElementById('form-id').value;
+      
+      const rawId = document.getElementById('form-id').value;
+      const targetId = rawId ? String(rawId).trim() : null;
 
       const deviceData = {
-        id: id || (Date.now().toString() + Math.random().toString(36).substr(2, 4)),
+        id: targetId || String(Date.now() + Math.random().toString(36).substr(2, 4)),
         serial: document.getElementById('form-serial').value.trim().toUpperCase(),
         model: document.getElementById('form-model').value,
         capacity: document.getElementById('form-capacity').value,
@@ -1112,11 +1004,18 @@
         note: document.getElementById('form-note').value.trim()
       };
 
-      if (id) {
-        const idx = window.devices.findIndex(d => d.id === id);
-        if (idx !== -1) window.devices[idx] = deviceData;
-        showToast(`Đã cập nhật máy ${deviceData.serial}`);
+      if (targetId) {
+        // Tìm và ghi đè đúng vị trí
+        const idx = window.devices.findIndex(d => String(d.id).trim() === targetId);
+        if (idx !== -1) {
+          window.devices[idx] = deviceData;
+          showToast(`Đã cập nhật thông tin máy ${deviceData.serial}`);
+        } else {
+          window.devices.unshift(deviceData);
+          showToast(`Đã thêm máy mới ${deviceData.serial}`);
+        }
       } else {
+        // Thêm mới hoàn toàn
         window.devices.unshift(deviceData);
         showToast(`Đã thêm máy mới ${deviceData.serial}`);
       }
@@ -1129,11 +1028,13 @@
     }
 
     async function deleteDevice(id) {
-      const dev = window.devices.find(d => d.id === id);
+      const targetId = String(id).trim();
+      const dev = window.devices.find(d => String(d.id).trim() === targetId);
       if (!dev) return;
+
       const confirmed = await customConfirm(`Bạn có chắc chắn muốn xóa máy Serial: ${dev.serial} khỏi hệ thống không?`, 'Xóa máy Switch');
       if (confirmed) {
-        window.devices = window.devices.filter(d => d.id !== id);
+        window.devices = window.devices.filter(d => String(d.id).trim() !== targetId);
         saveDevicesToStorage();
         renderDashboard();
         renderDeviceTable();
@@ -1143,9 +1044,10 @@
 
     // Quick Status Modal
     function openStatusModal(id) {
-      const dev = window.devices.find(d => d.id === id);
+      const targetId = String(id).trim();
+      const dev = window.devices.find(d => String(d.id).trim() === targetId);
       if (!dev) return;
-      activeQuickId = id;
+      activeQuickId = targetId;
       document.getElementById('status-modal-serial').textContent = `Số Serial: ${dev.serial} (${dev.model})`;
       document.getElementById('quick-status').value = dev.status;
       document.getElementById('quick-branch').value = dev.branch || 'Trụ sở Bình Tân';
@@ -1160,7 +1062,7 @@
 
     function saveQuickStatus() {
       if (!activeQuickId) return;
-      const dev = window.devices.find(d => d.id === activeQuickId);
+      const dev = window.devices.find(d => String(d.id).trim() === activeQuickId);
       if (dev) {
         const oldStatus = dev.status;
         const newStatus = document.getElementById('quick-status').value;
@@ -1182,6 +1084,19 @@
       }
       closeStatusModal();
     }
+
+    // App Initialization
+    window.onload = function() {
+      const savedData = loadFromLocalStorage();
+      if (savedData && Array.isArray(savedData) && savedData.length > 0) {
+        window.devices = savedData;
+      } else {
+        window.devices = INITIAL_DEVICES.map(d => ({ ...d, id: String(d.id) }));
+        saveDevicesToStorage();
+      }
+      renderDashboard();
+      renderDeviceTable();
+    };
   </script>
 </body>
 </html>
