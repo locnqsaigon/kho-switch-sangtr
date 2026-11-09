@@ -232,7 +232,7 @@
         <!-- Search Input -->
         <div class="relative w-full lg:w-80">
           <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
-          <input type="text" id="filter-search" oninput="applyFilters()" placeholder="Tìm theo Serial, lỗi, ghi chú..." class="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition">
+          <input type="text" id="filter-search" oninput="applyFilters()" placeholder="Tìm Serial, mã hàng, số lô, lỗi..." class="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition">
         </div>
 
         <!-- Dropdown Filters -->
@@ -271,17 +271,20 @@
       <!-- Main Devices Table -->
       <div class="bg-white rounded-xl border border-slate-200/80 shadow-sm overflow-hidden">
         <div class="overflow-x-auto">
-          <table class="w-full text-sm text-left text-slate-600">
+          <table class="w-full min-w-[1500px] text-sm text-left text-slate-600">
             <thead class="text-xs uppercase bg-slate-50 text-slate-500 border-b border-slate-200">
               <tr>
-                <th class="py-3.5 px-3.5 font-semibold">Số Serial</th>
+                <th class="py-3.5 px-3 font-semibold text-center whitespace-nowrap w-14">STT</th>
+                <th class="py-3.5 px-3.5 font-semibold whitespace-nowrap min-w-[140px]">Số Serial</th>
+                <th class="py-3.5 px-3.5 font-semibold whitespace-nowrap min-w-[130px]">Mã hàng</th>
+                <th class="py-3.5 px-3.5 font-semibold whitespace-nowrap min-w-[140px]">Số lô hàng</th>
                 <th class="py-3.5 px-3.5 font-semibold">Model / Thẻ</th>
-                <th class="py-3.5 px-3.5 font-semibold">Giá máy (VNĐ)</th>
+                <th class="py-3.5 px-3.5 font-semibold whitespace-nowrap">Giá máy (VNĐ)</th>
                 <th class="py-3.5 px-3.5 font-semibold whitespace-nowrap min-w-[150px]">Chi nhánh</th>
                 <th class="py-3.5 px-3.5 font-semibold whitespace-nowrap min-w-[160px]">Trạng thái</th>
-                <th class="py-3.5 px-3.5 font-semibold">Lỗi ban đầu</th>
-                <th class="py-3.5 px-3.5 font-semibold">Thời gian KT</th>
-                <th class="py-3.5 px-3.5 font-semibold">KT Xử Lý / Ghi Chú</th>
+                <th class="py-3.5 px-3.5 font-semibold whitespace-nowrap">Lỗi ban đầu</th>
+                <th class="py-3.5 px-3.5 font-semibold whitespace-nowrap">Thời gian KT</th>
+                <th class="py-3.5 px-3.5 font-semibold whitespace-nowrap">KT Xử Lý / Ghi Chú</th>
                 <th class="py-3.5 px-3.5 font-semibold text-right">Thao tác</th>
               </tr>
             </thead>
@@ -326,6 +329,18 @@
           <div>
             <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Số Serial máy <span class="text-rose-500">*</span></label>
             <input type="text" id="form-serial" required placeholder="Ví dụ: XKW1001" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500">
+          </div>
+
+          <!-- Mã hàng -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Mã hàng</label>
+            <input type="text" id="form-item-code" placeholder="Ví dụ: SW-OLED-WHT" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500">
+          </div>
+
+          <!-- Số lô hàng -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Số lô hàng</label>
+            <input type="text" id="form-lot-number" placeholder="Ví dụ: LOT-2026-001" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500">
           </div>
 
           <!-- Model -->
@@ -655,6 +670,8 @@
       return {
         id: String(Date.now() + Math.random().toString(36).substr(2, 5)),
         serial: serial.toUpperCase(),
+        itemCode: getValue(['Mã hàng', 'Ma hang', 'Mã sản phẩm', 'Ma san pham']),
+        lotNumber: getValue(['Số lô hàng', 'So lo hang', 'Số lô', 'So lo', 'Lot Number', 'Lot']),
         model: model,
         capacity: getValue(['Dung lượng', 'Dung lượng thẻ', 'SD']) || '64GB',
         price: price,
@@ -726,6 +743,8 @@
       const exportData = window.devices.map((d, idx) => ({
         "STT": idx + 1,
         "Số Serial": d.serial,
+        "Mã hàng": d.itemCode || '',
+        "Số lô hàng": d.lotNumber || '',
         "Model": d.model,
         "Dung Lượng": d.capacity || '64GB',
         "Giá (VNĐ)": d.price,
@@ -740,7 +759,7 @@
       }));
 
       const worksheet = XLSX.utils.json_to_sheet(exportData);
-      worksheet['!cols'] = [{ wch: 6 }, { wch: 14 }, { wch: 18 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 22 }, { wch: 16 }, { wch: 20 }, { wch: 14 }, { wch: 14 }, { wch: 24 }, { wch: 20 }];
+      worksheet['!cols'] = [{ wch: 6 }, { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 22 }, { wch: 16 }, { wch: 20 }, { wch: 14 }, { wch: 14 }, { wch: 24 }, { wch: 20 }];
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Danh sách máy Switch");
       XLSX.writeFile(workbook, `Quan_ly_kho_SangTR_${new Date().toISOString().split('T')[0]}.xlsx`);
@@ -879,7 +898,7 @@
       const modelF = document.getElementById('filter-model')?.value || '';
 
       const filtered = (window.devices || []).filter(d => {
-        const matchSearch = !search || cleanKey(d.serial).includes(search) || cleanKey(d.issue).includes(search) || cleanKey(d.note).includes(search) || cleanKey(d.techAction).includes(search);
+        const matchSearch = !search || cleanKey(d.serial).includes(search) || cleanKey(d.itemCode).includes(search) || cleanKey(d.lotNumber).includes(search) || cleanKey(d.issue).includes(search) || cleanKey(d.note).includes(search) || cleanKey(d.techAction).includes(search);
         const matchStatus = !statusF || d.status === statusF;
         const matchBranch = !branchF || d.branch === branchF;
         const matchModel = !modelF || d.model === modelF;
@@ -895,7 +914,7 @@
 
       const refDate = new Date();
 
-      filtered.forEach(d => {
+      filtered.forEach((d, index) => {
         let statusBadge = '';
         if (d.status === 'Trong kho') statusBadge = '<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Trong kho</span>';
         else if (d.status === 'Đang ở kỹ thuật') statusBadge = '<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200"><span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>Đang ở kỹ thuật</span>';
@@ -916,13 +935,16 @@
         const tr = document.createElement('tr');
         tr.className = "hover:bg-slate-50 transition border-b border-slate-100 text-slate-700";
         tr.innerHTML = `
-          <td class="py-3 px-3.5 font-bold text-slate-900">${d.serial}</td>
-          <td class="py-3 px-3.5"><div class="font-semibold text-slate-800">${d.model}</div><div class="text-xs text-slate-400">${d.capacity || '64GB'}</div></td>
-          <td class="py-3 px-3.5 font-semibold text-slate-900">${(Number(d.price) || 0).toLocaleString('vi-VN')} ₫</td>
+          <td class="py-3 px-3 text-center text-slate-400 font-medium whitespace-nowrap">${index + 1}</td>
+          <td class="py-3 px-3.5 font-bold text-slate-900 whitespace-nowrap">${d.serial || '-'}</td>
+          <td class="py-3 px-3.5 font-medium text-slate-700 whitespace-nowrap">${d.itemCode || '-'}</td>
+          <td class="py-3 px-3.5 font-medium text-slate-700 whitespace-nowrap">${d.lotNumber || '-'}</td>
+          <td class="py-3 px-3.5 whitespace-nowrap"><div class="font-semibold text-slate-800">${d.model}</div><div class="text-xs text-slate-400">${d.capacity || '64GB'}</div></td>
+          <td class="py-3 px-3.5 font-semibold text-slate-900 whitespace-nowrap">${(Number(d.price) || 0).toLocaleString('vi-VN')} ₫</td>
           <td class="py-3 px-3.5 whitespace-nowrap min-w-[150px] font-medium text-slate-700">${d.branch || 'Chưa gán'}</td>
           <td class="py-3 px-3.5 whitespace-nowrap min-w-[160px]">${statusBadge}</td>
           <td class="py-3 px-3.5 text-slate-600 max-w-[180px] truncate" title="${d.issue || ''}">${d.issue || '-'}</td>
-          <td class="py-3 px-3.5 text-xs text-slate-500">${daysTechText}</td>
+          <td class="py-3 px-3.5 text-xs text-slate-500 whitespace-nowrap">${daysTechText}</td>
           <td class="py-3 px-3.5 text-slate-600 max-w-[200px] truncate" title="${d.techAction || d.note || ''}">${d.techAction || d.note || '-'}</td>
           <td class="py-3 px-3.5 text-right space-x-1 whitespace-nowrap">
             <button onclick="openStatusModal('${String(d.id)}')" title="Đổi trạng thái nhanh" class="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
@@ -969,6 +991,8 @@
       // Gán chắc chắn ID dạng chuỗi
       document.getElementById('form-id').value = String(dev.id);
       document.getElementById('form-serial').value = dev.serial || '';
+      document.getElementById('form-item-code').value = dev.itemCode || '';
+      document.getElementById('form-lot-number').value = dev.lotNumber || '';
       document.getElementById('form-model').value = dev.model || 'Switch V2';
       document.getElementById('form-capacity').value = dev.capacity || '64GB';
       document.getElementById('form-price').value = dev.price || 0;
@@ -991,6 +1015,8 @@
       const deviceData = {
         id: targetId || String(Date.now() + Math.random().toString(36).substr(2, 4)),
         serial: document.getElementById('form-serial').value.trim().toUpperCase(),
+        itemCode: document.getElementById('form-item-code').value.trim(),
+        lotNumber: document.getElementById('form-lot-number').value.trim(),
         model: document.getElementById('form-model').value,
         capacity: document.getElementById('form-capacity').value,
         price: Number(document.getElementById('form-price').value) || 0,
