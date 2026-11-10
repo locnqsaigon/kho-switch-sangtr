@@ -96,6 +96,19 @@
         <p id="login-error" class="hidden text-sm text-rose-600"></p>
         <button id="login-submit" type="submit" class="w-full rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-semibold py-2.5 text-sm">Đăng nhập</button>
       </form>
+      <div class="mt-3 text-right">
+        <button type="button" id="forgot-password-btn" onclick="sendPasswordReset(event)" class="text-xs font-semibold text-rose-600 hover:text-rose-700">Quên mật khẩu?</button>
+      </div>
+      <div id="reset-password-panel" class="hidden mt-4 border-t border-slate-200 pt-4">
+        <h3 class="text-sm font-bold text-slate-900 mb-1">Đặt mật khẩu mới</h3>
+        <p class="text-xs text-slate-500 mb-3">Nhập mật khẩu mới cho tài khoản của bạn.</p>
+        <form id="reset-password-form" onsubmit="updatePasswordApp(event)" class="space-y-3">
+          <div><label for="new-password" class="block text-xs font-semibold text-slate-700 mb-1">Mật khẩu mới</label><input id="new-password" type="password" minlength="8" required autocomplete="new-password" class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/20" placeholder="Ít nhất 8 ký tự"></div>
+          <div><label for="confirm-new-password" class="block text-xs font-semibold text-slate-700 mb-1">Nhập lại mật khẩu mới</label><input id="confirm-new-password" type="password" minlength="8" required autocomplete="new-password" class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/20" placeholder="Nhập lại mật khẩu"></div>
+          <p id="reset-password-message" class="hidden text-sm"></p>
+          <button id="reset-password-submit" type="submit" class="w-full rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-semibold py-2.5 text-sm">Lưu mật khẩu mới</button>
+        </form>
+      </div>
       <p class="mt-5 text-[11px] leading-relaxed text-slate-400">Dữ liệu được lưu tập trung trên Supabase. Chỉ tài khoản đã được cấp quyền mới truy cập được.</p>
     </div>
   </div>
@@ -701,14 +714,75 @@
       renderDeviceTable();
     }
 
+    function setResetPasswordMessage(message, isError = false) {
+      const el = document.getElementById('reset-password-message');
+      if (!el) return;
+      el.textContent = message || '';
+      el.className = `text-sm ${isError ? 'text-rose-600' : 'text-emerald-700'}`;
+      el.classList.toggle('hidden', !message);
+    }
+
+    async function sendPasswordReset(event) {
+      event.preventDefault();
+      const email = document.getElementById('login-email').value.trim();
+      if (!email) { setLoginError('Vui lòng nhập email trước khi yêu cầu đặt lại mật khẩu.'); return; }
+      const button = document.getElementById('forgot-password-btn');
+      button.disabled = true; button.textContent = 'Đang gửi...'; setLoginError('');
+      try {
+        const redirectTo = window.location.href.split('#')[0];
+        const { error } = await supabaseClient.auth.resetPasswordForEmail(email, { redirectTo });
+        if (error) throw error;
+        setLoginError('Đã gửi email khôi phục nếu địa chỉ này tồn tại. Hãy kiểm tra Hộp thư đến và Spam.');
+        document.getElementById('login-error').classList.remove('text-rose-600');
+        document.getElementById('login-error').classList.add('text-emerald-700');
+      } catch (err) {
+        setLoginError(`Không gửi được email khôi phục: ${err.message}`);
+      } finally { button.disabled = false; button.textContent = 'Quên mật khẩu?'; }
+    }
+
+    function showPasswordRecoveryForm() {
+      showAuthOverlay(true);
+      document.getElementById('login-form').classList.add('hidden');
+      document.getElementById('forgot-password-btn').classList.add('hidden');
+      document.getElementById('reset-password-panel').classList.remove('hidden');
+      setLoginError('');
+      setResetPasswordMessage('Liên kết hợp lệ. Hãy tạo mật khẩu mới cho tài khoản.', false);
+    }
+
+    async function updatePasswordApp(event) {
+      event.preventDefault();
+      const password = document.getElementById('new-password').value;
+      const confirmPassword = document.getElementById('confirm-new-password').value;
+      if (password.length < 8) { setResetPasswordMessage('Mật khẩu phải có ít nhất 8 ký tự.', true); return; }
+      if (password !== confirmPassword) { setResetPasswordMessage('Hai mật khẩu không khớp.', true); return; }
+      const button = document.getElementById('reset-password-submit');
+      button.disabled = true; button.textContent = 'Đang cập nhật...';
+      try {
+        const { error } = await supabaseClient.auth.updateUser({ password });
+        if (error) throw error;
+        setResetPasswordMessage('Đổi mật khẩu thành công. Bạn có thể quay lại đăng nhập bằng mật khẩu mới.', false);
+        document.getElementById('reset-password-form').classList.add('hidden');
+        await supabaseClient.auth.signOut();
+        document.getElementById('login-form').classList.remove('hidden');
+        document.getElementById('forgot-password-btn').classList.remove('hidden');
+        document.getElementById('reset-password-panel').classList.add('hidden');
+        setLoginError('Mật khẩu đã được cập nhật. Hãy đăng nhập bằng mật khẩu mới.');
+        document.getElementById('login-error').classList.remove('text-rose-600');
+        document.getElementById('login-error').classList.add('text-emerald-700');
+        document.getElementById('reset-password-form').reset();
+      } catch (err) {
+        setResetPasswordMessage(`Không cập nhật được mật khẩu: ${err.message}`, true);
+      } finally { button.disabled = false; button.textContent = 'Lưu mật khẩu mới'; }
+    }
+
     async function signInApp(event) {
       event.preventDefault();
       const button = document.getElementById('login-submit');
       button.disabled = true; button.textContent = 'Đang đăng nhập...'; setLoginError('');
       const email = document.getElementById('login-email').value.trim();
       const password = document.getElementById('login-password').value;
-      const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
       try {
+        const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
         if (error) throw error;
         await afterSignIn(data.session);
       } catch (err) {
@@ -736,7 +810,11 @@
         try { await afterSignIn(session); }
         catch (err) { showAuthOverlay(true); setLoginError(err.message); }
       }
-      supabaseClient.auth.onAuthStateChange(async (_event, nextSession) => {
+      supabaseClient.auth.onAuthStateChange(async (event, nextSession) => {
+        if (event === 'PASSWORD_RECOVERY') {
+          showPasswordRecoveryForm();
+          return;
+        }
         if (!nextSession) {
           window.currentUser = null; window.currentProfile = null; window.currentRole = null;
           window.devices = []; showAuthOverlay(true);
