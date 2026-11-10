@@ -804,22 +804,66 @@
 
     async function initCloudApp() {
       showAuthOverlay(true);
-      const { data: { session }, error } = await supabaseClient.auth.getSession();
-      if (error) { setLoginError(error.message); return; }
-      if (session) {
-        try { await afterSignIn(session); }
-        catch (err) { showAuthOverlay(true); setLoginError(err.message); }
-      }
-      supabaseClient.auth.onAuthStateChange(async (event, nextSession) => {
+
+      // Supabase may process the recovery link while the client initializes.
+      // Register the listener BEFORE getSession() so PASSWORD_RECOVERY is not missed.
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      const queryParams = new URLSearchParams(window.location.search);
+      const recoveryRedirect = hashParams.get('type') === 'recovery' || queryParams.get('type') === 'recovery';
+      let recoveryMode = recoveryRedirect;
+      let handledUserId = null;
+
+      const resumeNormalSession = (nextSession) => {
+        if (!nextSession || recoveryMode || recoveryRedirect) return;
+        const userId = nextSession.user && nextSession.user.id;
+        if (!userId || handledUserId === userId) return;
+        handledUserId = userId;
+        // Do not await Supabase calls inside onAuthStateChange; defer to the microtask queue.
+        Promise.resolve().then(() => afterSignIn(nextSession)).catch((err) => {
+          showAuthOverlay(true);
+          setLoginError(err.message || 'Không thể tải dữ liệu tài khoản.');
+        });
+      };
+
+      supabaseClient.auth.onAuthStateChange((event, nextSession) => {
         if (event === 'PASSWORD_RECOVERY') {
+          recoveryMode = true;
           showPasswordRecoveryForm();
           return;
         }
-        if (!nextSession) {
+
+        if (event === 'INITIAL_SESSION') {
+          if (recoveryMode) {
+            if (nextSession) showPasswordRecoveryForm();
+            return;
+          }
+          resumeNormalSession(nextSession);
+          return;
+        }
+
+        if (event === 'SIGNED_IN') {
+          if (recoveryMode) {
+            showPasswordRecoveryForm();
+            return;
+          }
+          resumeNormalSession(nextSession);
+          return;
+        }
+
+        if (event === 'SIGNED_OUT') {
           window.currentUser = null; window.currentProfile = null; window.currentRole = null;
           window.devices = []; showAuthOverlay(true);
         }
       });
+
+      const { data: { session }, error } = await supabaseClient.auth.getSession();
+      if (error) { setLoginError(error.message); return; }
+      if (recoveryMode && session) {
+        showPasswordRecoveryForm();
+      } else if (session && !recoveryRedirect) {
+        resumeNormalSession(session);
+      }
+
       if (window.lucide) lucide.createIcons();
     }
 
