@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>QUẢN LÝ KHO SHOP SANG TR · CLOUD V3.7</title>
+  <title>QUẢN LÝ KHO SHOP SANG TR</title>
   
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -597,8 +597,6 @@
     let modelChartInstance = null;
     let activeQuickId = null;
     let confirmCallback = null;
-    let afterSignInPromise = null;
-    let afterSignInUserId = null;
 
     // Legacy sample records are intentionally NOT auto-loaded into Cloud.
     const INITIAL_DEVICES = [];
@@ -633,14 +631,43 @@
       };
     }
 
+    // Convert legacy Excel serial dates (e.g. 46214) and common date strings
+    // into PostgreSQL DATE-compatible YYYY-MM-DD values.
+    function normalizeDateForDb(value, fieldLabel = 'ngày') {
+      if (value === null || value === undefined || value === '') return null;
+      if (typeof value === 'number' || (typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value.trim()))) {
+        const serial = Number(value);
+        if (!Number.isFinite(serial) || serial < 1 || serial > 100000) {
+          throw new Error(`Giá trị ${fieldLabel} không hợp lệ: ${value}`);
+        }
+        const date = new Date(Date.UTC(1899, 11, 30) + Math.floor(serial) * 86400000);
+        return date.toISOString().slice(0, 10);
+      }
+      const raw = String(value).trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+      const dmy = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+      if (dmy) {
+        const date = new Date(Date.UTC(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1])));
+        if (date.getUTCFullYear() !== Number(dmy[3]) || date.getUTCMonth() !== Number(dmy[2]) - 1 || date.getUTCDate() !== Number(dmy[1])) {
+          throw new Error(`Giá trị ${fieldLabel} không hợp lệ: ${value}`);
+        }
+        return date.toISOString().slice(0, 10);
+      }
+      const parsed = new Date(raw);
+      if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
+      throw new Error(`Không thể chuyển ${fieldLabel} “${value}” thành ngày hợp lệ.`);
+    }
+
     function toDbDevice(device, isNew = false) {
       const row = {
         serial: String(device.serial || '').trim().toUpperCase(), item_code: device.itemCode || null,
         lot_number: device.lotNumber || null, model: device.model || 'Switch V2', capacity: device.capacity || '64GB',
         price: Number(device.price) || 0, branch: device.branch || null, status: device.status || 'Trong kho',
-        date_received: device.dateReceived || null, date_tech_send: device.dateTechSend || null,
-        date_tech_return: device.dateTechReturn || null, issue: device.issue || null,
-        tech_action: device.techAction || null, note: device.note || null, updated_by: window.currentUser?.id || null
+        date_received: normalizeDateForDb(device.dateReceived, 'ngày nhập kho'),
+        date_tech_send: normalizeDateForDb(device.dateTechSend, 'ngày gửi kỹ thuật'),
+        date_tech_return: normalizeDateForDb(device.dateTechReturn, 'ngày nhận lại kỹ thuật'),
+        issue: device.issue || null, tech_action: device.techAction || null,
+        note: device.note || null, updated_by: window.currentUser?.id || null
       };
       if (isNew) row.created_by = window.currentUser?.id || null;
       return row;
@@ -698,42 +725,27 @@
     }
 
     async function afterSignIn(session) {
-      const userId = session?.user?.id;
-      if (!userId) throw new Error('Phiên đăng nhập không hợp lệ. Vui lòng đăng nhập lại.');
-      // SIGNED_IN listener and signInApp can both receive the same session.
-      // Share one initialization promise to prevent duplicate migration prompts/queries.
-      if (afterSignInPromise && afterSignInUserId === userId) return afterSignInPromise;
-      afterSignInUserId = userId;
-      afterSignInPromise = (async () => {
-        window.currentUser = session.user;
-        const { data: profile, error: profileError } = await supabaseClient.from('profiles')
-          .select('id, full_name, role').eq('id', userId).maybeSingle();
-        if (profileError) throw profileError;
-        if (!profile || !['admin', 'staff'].includes(profile.role)) {
-          await supabaseClient.auth.signOut();
-          throw new Error('Tài khoản chưa được cấp hồ sơ Admin/Staff trong bảng profiles. Vui lòng liên hệ Admin.');
-        }
-        window.currentProfile = profile;
-        window.currentRole = profile.role;
-        showAuthOverlay(false);
-        const badge = document.getElementById('cloud-status-badge');
-        badge.textContent = `Cloud · ${profile.role === 'admin' ? 'Admin' : 'Staff'}`;
-        badge.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200';
-        await migrateLegacyDataIfNeeded();
-        await loadCloudDevices();
-        renderDeviceTable();
-      })();
-      try {
-        return await afterSignInPromise;
-      } catch (err) {
-        afterSignInPromise = null;
-        afterSignInUserId = null;
-        window.currentUser = null;
-        window.currentProfile = null;
-        window.currentRole = null;
-        showAuthOverlay(true);
-        throw err;
+      window.currentUser = session.user;
+      const { data: profile, error: profileError } = await supabaseClient.from('profiles').select('id, full_name, role').eq('id', session.user.id).maybeSingle();
+      if (profileError) throw profileError;
+      if (!profile || !['admin', 'staff'].includes(profile.role)) {
+        await supabaseClient.auth.signOut();
+        throw new Error('Tài khoản chưa được cấp hồ sơ Admin/Staff trong bảng profiles. Vui lòng liên hệ Admin.');
       }
+      window.currentProfile = profile;
+      window.currentRole = profile.role;
+      showAuthOverlay(false);
+      const badge = document.getElementById('cloud-status-badge');
+      badge.textContent = `Cloud · ${profile.role === 'admin' ? 'Admin' : 'Staff'}`;
+      badge.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200';
+      try {
+        await migrateLegacyDataIfNeeded();
+      } catch (migrationError) {
+        console.error('Cloud migration failed:', migrationError);
+        showToast(`Không chuyển được dữ liệu cũ: ${migrationError.message}. Bạn vẫn đang đăng nhập; dữ liệu LocalStorage chưa bị xóa.`, 'error');
+      }
+      await loadCloudDevices();
+      renderDeviceTable();
     }
 
     function setResetPasswordMessage(message, isError = false) {
@@ -808,8 +820,7 @@
         if (error) throw error;
         await afterSignIn(data.session);
       } catch (err) {
-        const detail = err.message || 'Không thể đăng nhập.';
-        setLoginError(detail + (/(schema cache|\b42P01\b|\bPGRST|permission|JWT|fetch)/i.test(detail) ? ' Kiểm tra Data API, quyền truy cập bảng và cấu hình Supabase.' : ''));
+        setLoginError(err.message || 'Không thể đăng nhập. Vui lòng kiểm tra tài khoản và cấu hình Data API.');
       } finally { button.disabled = false; button.textContent = 'Đăng nhập'; }
     }
 
@@ -817,7 +828,6 @@
       const { error } = await supabaseClient.auth.signOut();
       if (error) showToast(error.message, 'error');
       window.currentUser = null; window.currentProfile = null; window.currentRole = null;
-      afterSignInPromise = null; afterSignInUserId = null;
       window.devices = []; showAuthOverlay(true); setLoginError('');
     }
 
@@ -876,7 +886,6 @@
 
         if (event === 'SIGNED_OUT') {
           window.currentUser = null; window.currentProfile = null; window.currentRole = null;
-          afterSignInPromise = null; afterSignInUserId = null;
           window.devices = []; showAuthOverlay(true);
         }
       });
@@ -946,8 +955,7 @@
       const icon = type === 'success' ? '<i data-lucide="check-circle" class="w-5 h-5 text-emerald-400"></i>' : '<i data-lucide="alert-triangle" class="w-5 h-5 text-rose-400"></i>';
 
       toast.className = `flex items-center gap-3 px-4 py-3 rounded-xl border shadow-xl transition-all duration-300 transform translate-y-2 opacity-0 pointer-events-auto ${bgColor}`;
-      toast.innerHTML = `${icon}<span class="text-sm font-medium"></span>`;
-      toast.querySelector('span').textContent = String(message ?? '');
+      toast.innerHTML = `${icon}<span class="text-sm font-medium">${message}</span>`;
 
       container.appendChild(toast);
       if (window.lucide) lucide.createIcons();
@@ -1027,7 +1035,6 @@
     }
 
     function handleFileUpload(event) {
-      if (!window.currentUser) { showToast('Vui lòng đăng nhập để nhập dữ liệu.', 'error'); event.target.value = ''; return; }
       const file = event.target.files[0];
       if (!file) return;
 
@@ -1348,7 +1355,6 @@
 
     // Modal Control & Fix Update Issue
     function openModal(mode = 'add') {
-      if (!window.currentUser) { showToast('Vui lòng đăng nhập để thao tác.', 'error'); return; }
       if (mode === 'add') {
         document.getElementById('device-form').reset();
         document.getElementById('form-id').value = '';
@@ -1415,11 +1421,6 @@
         note: document.getElementById('form-note').value.trim()
       };
 
-      if (!deviceData.serial) { showToast('Vui lòng nhập số Serial.', 'error'); document.getElementById('form-serial').focus(); return; }
-      if (!Number.isFinite(deviceData.price) || deviceData.price < 0) { showToast('Giá máy không hợp lệ.', 'error'); return; }
-      if (deviceData.dateTechSend && deviceData.dateTechReturn && deviceData.dateTechReturn < deviceData.dateTechSend) {
-        showToast('Ngày nhận kỹ thuật không thể trước ngày gửi kỹ thuật.', 'error'); return;
-      }
       try {
         const payload = toDbDevice(deviceData, !targetId);
         let savedRow, error;
@@ -1475,7 +1476,6 @@
     }
 
     async function saveQuickStatus() {
-      if (!window.currentUser) { showToast('Vui lòng đăng nhập để thao tác.', 'error'); return; }
       if (!activeQuickId) return;
       const dev = window.devices.find(d => String(d.id).trim() === activeQuickId);
       if (!dev) return;
